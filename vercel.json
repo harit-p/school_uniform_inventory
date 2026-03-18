@@ -7,7 +7,7 @@
   "routes": [
     { "src": "/api/(.*)", "dest": "api/index.mjs" },
     { "handle": "filesystem" },
-    { "src": "/(.*)", "dest": "/dist/index.html" }
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
 
