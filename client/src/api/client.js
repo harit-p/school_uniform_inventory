@@ -2,7 +2,7 @@
  * API client — all server calls go through this layer.
  * Makes it easy to swap to Electron IPC or another backend later.
  */
-const BASE = '/api';
+const BASE = (import.meta?.env?.VITE_API_BASE || '/api').replace(/\/$/, '');
 
 async function request(path, options = {}) {
   const url = path.startsWith('http') ? path : `${BASE}${path}`;

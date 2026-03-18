@@ -1,24 +1,9 @@
 import 'dotenv/config';
-import express from 'express';
-import cors from 'cors';
 import { connectDB } from './db.js';
-import healthRoutes from './routes/health.js';
-import schoolsRoutes from './routes/schools.js';
-import productsRoutes from './routes/products.js';
-import stockRoutes from './routes/stock.js';
-import billsRoutes from './routes/bills.js';
+import { createApp } from './app.js';
 
-const app = express();
+const app = createApp();
 const PORT = process.env.PORT || 3001;
-
-app.use(cors({ origin: true }));
-app.use(express.json());
-
-app.use('/api', healthRoutes);
-app.use('/api', schoolsRoutes);
-app.use('/api', productsRoutes);
-app.use('/api', stockRoutes);
-app.use('/api', billsRoutes);
 
 async function start() {
   try {
