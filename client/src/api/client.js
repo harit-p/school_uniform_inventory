@@ -13,10 +13,11 @@ async function request(path, options = {}) {
   if (!res.ok) {
     const err = new Error(res.statusText || 'Request failed');
     err.status = res.status;
+    const raw = await res.text().catch(() => '');
     try {
-      err.body = await res.json();
+      err.body = raw ? JSON.parse(raw) : raw;
     } catch {
-      err.body = await res.text();
+      err.body = raw;
     }
     throw err;
   }
