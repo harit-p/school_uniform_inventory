@@ -2,11 +2,6 @@
   "version": 2,
   "buildCommand": "npm run build --prefix client",
   "outputDirectory": "client/dist",
-  "functions": {
-    "api/index.mjs": {
-      "runtime": "nodejs20.x"
-    }
-  },
   "routes": [
     { "src": "/api/(.*)", "dest": "api/index.mjs" },
     { "handle": "filesystem" },
