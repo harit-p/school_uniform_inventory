@@ -1,9 +1,12 @@
 {
   "version": 2,
-  "builds": [
-    { "src": "api/index.mjs", "use": "@vercel/node" },
-    { "src": "client/package.json", "use": "@vercel/static-build", "config": { "distDir": "dist" } }
-  ],
+  "buildCommand": "npm run build --prefix client",
+  "outputDirectory": "client/dist",
+  "functions": {
+    "api/index.mjs": {
+      "runtime": "nodejs20.x"
+    }
+  },
   "routes": [
     { "src": "/api/(.*)", "dest": "api/index.mjs" },
     { "handle": "filesystem" },
