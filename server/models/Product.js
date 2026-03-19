@@ -22,5 +22,7 @@ const productSchema = new mongoose.Schema({
 
 productSchema.index({ school: 1, itemType: 1, size: 1 });
 productSchema.index({ sku: 'text', name: 'text' });
+productSchema.index({ isActive: 1, sku: 1 });
+productSchema.index({ isActive: 1, currentStock: 1 });
 
 export default mongoose.model('Product', productSchema);

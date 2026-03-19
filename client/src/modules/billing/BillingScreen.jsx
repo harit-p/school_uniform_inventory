@@ -3,6 +3,7 @@ import { useHotkeys } from 'react-hotkeys-hook';
 import { searchProducts } from '../../api/products';
 import { getNextBillNumber, createBill } from '../../api/bills';
 import { listSchools } from '../../api/schools';
+import { matchCombo } from '../../api/combos';
 
 function calcLine(qty, unitPrice, gstRate) {
   const taxableAmount = Math.round(qty * unitPrice * 100) / 100;
@@ -15,12 +16,17 @@ function calcLine(qty, unitPrice, gstRate) {
 export default function BillingScreen() {
   const scanRef = useRef(null);
   const amountPaidRef = useRef(null);
+  const lastRowQtyRef = useRef(null);
   const [billNumber, setBillNumber] = useState('');
   const [customerName, setCustomerName] = useState('CASH CUSTOMER');
+  const [customerGst, setCustomerGst] = useState('');
+  const [stateName, setStateName] = useState('Gujarat');
+  const [stateCode, setStateCode] = useState('24');
   const [schools, setSchools] = useState([]);
   const [selectedSchoolId, setSelectedSchoolId] = useState('');
   const [scanQuery, setScanQuery] = useState('');
   const [searchResults, setSearchResults] = useState([]);
+  const [highlightedSearchIndex, setHighlightedSearchIndex] = useState(-1);
   const [items, setItems] = useState([]);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [discount, setDiscount] = useState(0);
@@ -28,6 +34,7 @@ export default function BillingScreen() {
   const [amountPaid, setAmountPaid] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const [matchedComboName, setMatchedComboName] = useState(null);
 
   const subtotal = items.reduce((s, i) => s + (i.taxableAmount || 0), 0);
   const totalCgst = items.reduce((s, i) => s + (i.cgst || 0), 0);
@@ -43,12 +50,42 @@ export default function BillingScreen() {
   }, []);
 
   useEffect(() => {
+    if (items.length === 0) {
+      setMatchedComboName(null);
+      return;
+    }
+    const payload = {
+      schoolId: selectedSchoolId || undefined,
+      items: items.map((i) => ({ productId: i.productId, quantity: i.quantity })),
+    };
+    matchCombo(payload)
+      .then((res) => {
+        if (res.match && res.discountPercent != null) {
+          const sub = items.reduce((s, i) => s + (i.taxableAmount || 0), 0);
+          const discountAmount = Math.round((sub * res.discountPercent) / 100 * 100) / 100;
+          setDiscount(discountAmount);
+          setMatchedComboName(res.comboName || null);
+        } else {
+          setMatchedComboName(null);
+        }
+      })
+      .catch(() => setMatchedComboName(null));
+  }, [items, selectedSchoolId]);
+
+  useEffect(() => {
     if (!scanQuery.trim()) {
       setSearchResults([]);
+      setHighlightedSearchIndex(-1);
       return;
     }
     const t = setTimeout(() => {
-      searchProducts(scanQuery).then(setSearchResults).catch(() => setSearchResults([]));
+      searchProducts(scanQuery).then((results) => {
+        setSearchResults(results);
+        setHighlightedSearchIndex(results.length > 0 ? 0 : -1);
+      }).catch(() => {
+        setSearchResults([]);
+        setHighlightedSearchIndex(-1);
+      });
     }, 150);
     return () => clearTimeout(t);
   }, [scanQuery]);
@@ -72,7 +109,8 @@ export default function BillingScreen() {
     ]);
     setScanQuery('');
     setSearchResults([]);
-    scanRef.current?.focus();
+    setHighlightedSearchIndex(-1);
+    setTimeout(() => lastRowQtyRef.current?.focus(), 0);
   }, []);
 
   const removeItem = useCallback((index) => {
@@ -94,7 +132,39 @@ export default function BillingScreen() {
     });
   }, []);
 
+  const visibleResults = searchResults.slice(0, 10);
+
+  useEffect(() => {
+    if (visibleResults.length === 0 || highlightedSearchIndex < 0) return;
+    const id = visibleResults[highlightedSearchIndex]?._id;
+    if (id) {
+      const el = document.getElementById(`search-option-${id}`);
+      el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }, [highlightedSearchIndex, visibleResults]);
+
   const handleScanKeyDown = (e) => {
+    if (searchResults.length > 0 && (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Enter')) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setHighlightedSearchIndex((i) => (i < visibleResults.length - 1 ? i + 1 : i));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setHighlightedSearchIndex((i) => (i <= 0 ? visibleResults.length - 1 : i - 1));
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        const idx = highlightedSearchIndex >= 0 ? highlightedSearchIndex : 0;
+        const product = visibleResults[idx];
+        if (product) {
+          addProduct(product, 1);
+          return;
+        }
+      }
+    }
     if (e.key === 'Enter') {
       e.preventDefault();
       const q = scanQuery.trim();
@@ -109,7 +179,7 @@ export default function BillingScreen() {
         return;
       }
       if (searchResults.length > 1) {
-        addProduct(searchResults[0], 1);
+        addProduct(visibleResults[highlightedSearchIndex >= 0 ? highlightedSearchIndex : 0], 1);
       }
     }
   };
@@ -123,7 +193,13 @@ export default function BillingScreen() {
     setSaving(true);
     try {
       const payload = {
-        customer: { name: customerName || 'CASH CUSTOMER', school: selectedSchoolId || undefined },
+        customer: {
+          name: customerName || 'CASH CUSTOMER',
+          gst: customerGst.trim() || undefined,
+          school: selectedSchoolId || undefined,
+        },
+        stateName: stateName.trim() || 'Gujarat',
+        stateCode: stateCode.trim() || '24',
         items: items.map((i) => ({ productId: i.productId, quantity: i.quantity, unitPrice: i.unitPrice })),
         discount: Number(discount) || 0,
         paymentMode,
@@ -146,16 +222,17 @@ export default function BillingScreen() {
     }
   };
 
-  useHotkeys('f2', () => { setItems([]); setDiscount(0); setAmountPaid(''); setError(null); getNextBillNumber().then((r) => setBillNumber(r.billNumber || '')).catch(() => {}); scanRef.current?.focus(); }, { enableOnFormTags: false });
-  useHotkeys('f3', () => scanRef.current?.focus(), { enableOnFormTags: false });
-  useHotkeys('f10', () => amountPaidRef.current?.focus(), { enableOnFormTags: false });
-  useHotkeys('f12', (e) => { e.preventDefault(); handleSave(true); }, { enableOnFormTags: false });
-  useHotkeys('delete', () => { if (selectedIndex >= 0 && selectedIndex < items.length) removeItem(selectedIndex); }, { enableOnFormTags: ['INPUT', 'SELECT'] });
+  const hotkeyOpts = { enableOnFormTags: true };
+  useHotkeys('f2', (e) => { e?.preventDefault(); setItems([]); setDiscount(0); setAmountPaid(''); setCustomerGst(''); setStateName('Gujarat'); setStateCode('24'); setError(null); getNextBillNumber().then((r) => setBillNumber(r.billNumber || '')).catch(() => {}); scanRef.current?.focus(); }, hotkeyOpts);
+  useHotkeys('f3', (e) => { e?.preventDefault(); scanRef.current?.focus(); }, hotkeyOpts);
+  useHotkeys('f10', (e) => { e?.preventDefault(); amountPaidRef.current?.focus(); }, hotkeyOpts);
+  useHotkeys('f12', (e) => { e?.preventDefault(); handleSave(true); }, hotkeyOpts);
+  useHotkeys('delete', (e) => { if (selectedIndex >= 0 && selectedIndex < items.length) { e?.preventDefault(); removeItem(selectedIndex); } }, hotkeyOpts);
 
   return (
     <div className="flex flex-1 min-h-0 flex-col bg-white border-b border-slate-200">
       {/* Header */}
-      <div className="flex items-center gap-4 border-b border-slate-200 px-4 py-2">
+      <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 px-4 py-2">
         <span className="text-sm font-semibold text-slate-800">New Bill [F2]</span>
         <span className="font-mono text-sm text-slate-600">Bill No: {billNumber || '—'}</span>
         <input
@@ -164,6 +241,31 @@ export default function BillingScreen() {
           onChange={(e) => setCustomerName(e.target.value)}
           placeholder="Customer name"
           className="w-40 border border-slate-300 px-2 py-1 text-sm"
+        />
+        <input
+          type="text"
+          value={customerGst}
+          onChange={(e) => setCustomerGst(e.target.value)}
+          placeholder="Customer GST (optional)"
+          className="w-36 border border-slate-300 px-2 py-1 text-sm font-mono"
+        />
+        <span className="text-slate-500 text-sm">State:</span>
+        <input
+          type="text"
+          value={stateName}
+          onChange={(e) => setStateName(e.target.value)}
+          placeholder="Name"
+          className="w-24 border border-slate-300 px-2 py-1 text-sm"
+          title="State name"
+        />
+        <span className="text-slate-400">-</span>
+        <input
+          type="text"
+          value={stateCode}
+          onChange={(e) => setStateCode(e.target.value)}
+          placeholder="Code"
+          className="w-12 border border-slate-300 px-2 py-1 text-sm text-center"
+          title="State code (e.g. 24)"
         />
         <select
           value={selectedSchoolId}
@@ -192,13 +294,14 @@ export default function BillingScreen() {
             autoComplete="off"
           />
           {searchResults.length > 0 && (
-            <ul className="absolute z-10 mt-0.5 max-h-48 w-full max-w-xl overflow-auto border border-slate-200 bg-white shadow">
-              {searchResults.slice(0, 10).map((p) => (
-                <li key={p._id}>
+            <ul className="absolute z-10 mt-0.5 max-h-48 w-full max-w-xl overflow-auto border border-slate-200 bg-white shadow" role="listbox" aria-activedescendant={visibleResults[highlightedSearchIndex]?._id ? `search-option-${visibleResults[highlightedSearchIndex]._id}` : undefined}>
+              {visibleResults.map((p, idx) => (
+                <li key={p._id} id={`search-option-${p._id}`} role="option" aria-selected={idx === highlightedSearchIndex}>
                   <button
                     type="button"
                     onClick={() => addProduct(p, 1)}
-                    className="block w-full px-3 py-1.5 text-left text-sm hover:bg-slate-100 font-mono"
+                    onMouseEnter={() => setHighlightedSearchIndex(idx)}
+                    className={`block w-full px-3 py-1.5 text-left text-sm font-mono ${idx === highlightedSearchIndex ? 'bg-slate-200' : 'hover:bg-slate-100'}`}
                   >
                     {p.sku} — {p.name} — ₹{p.sellingPrice ?? 0}
                   </button>
@@ -220,11 +323,12 @@ export default function BillingScreen() {
               <th className="border-b border-slate-200 px-2 py-1.5 text-right font-medium text-slate-600 w-20">Rate</th>
               <th className="border-b border-slate-200 px-2 py-1.5 text-right font-medium text-slate-600 w-14">GST</th>
               <th className="border-b border-slate-200 px-2 py-1.5 text-right font-medium text-slate-600 w-20">Total</th>
+              <th className="border-b border-slate-200 px-2 py-1.5 text-center font-medium text-slate-600 w-16"></th>
             </tr>
           </thead>
           <tbody>
             {items.length === 0 ? (
-              <tr><td colSpan={6} className="px-2 py-4 text-center text-slate-500 text-sm">No items. Scan or search to add.</td></tr>
+              <tr><td colSpan={7} className="px-2 py-4 text-center text-slate-500 text-sm">No items. Scan or search to add.</td></tr>
             ) : (
               items.map((item, idx) => (
                 <tr
@@ -236,6 +340,7 @@ export default function BillingScreen() {
                   <td className="border-b border-slate-100 px-2 py-1">{item.product?.name}</td>
                   <td className="border-b border-slate-100 px-2 py-1 text-right">
                     <input
+                      ref={idx === items.length - 1 ? lastRowQtyRef : undefined}
                       type="number"
                       min={0.01}
                       step={item.product?.unit === 'meters' ? 0.1 : 1}
@@ -258,6 +363,16 @@ export default function BillingScreen() {
                   </td>
                   <td className="border-b border-slate-100 px-2 py-1 text-right text-slate-600">{item.product?.gstRate ?? 5}%</td>
                   <td className="border-b border-slate-100 px-2 py-1 text-right font-medium">₹{(item.totalAmount || 0).toFixed(2)}</td>
+                  <td className="border-b border-slate-100 px-2 py-1 text-center">
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); removeItem(idx); }}
+                      className="text-red-600 hover:text-red-800 hover:bg-red-50 rounded p-1 text-sm font-medium"
+                      title="Remove item"
+                    >
+                      Remove
+                    </button>
+                  </td>
                 </tr>
               ))
             )}
@@ -281,13 +396,19 @@ export default function BillingScreen() {
             onChange={(e) => setDiscount(e.target.value)}
             className="w-20 border border-slate-200 px-1 py-0.5 text-sm mx-1"
           />
+          {matchedComboName && (
+            <span className="ml-1 text-xs text-green-700" title="Combo discount applied">(Combo: {matchedComboName})</span>
+          )}
           <span className="text-slate-500 ml-2">Round off:</span> <span>{roundOff.toFixed(2)}</span>
         </div>
-        <div className="font-semibold text-slate-800">TOTAL: ₹{finalAmount.toFixed(2)}</div>
+        <div className="font-semibold text-slate-800">Net amount: ₹{finalAmount.toFixed(2)}</div>
       </div>
 
       {/* Payment row */}
-      <div className="flex items-center gap-4 px-4 py-2 border-b border-slate-200">
+      <div className="flex items-center gap-4 px-4 py-2 border-b border-slate-200 flex-wrap">
+        <span className="text-sm font-medium text-slate-700">Net amount:</span>
+        <span className="text-sm font-semibold text-slate-800">₹{finalAmount.toFixed(2)}</span>
+        <span className="text-slate-300">|</span>
         <span className="text-sm text-slate-600">Payment:</span>
         <select
           value={paymentMode}
@@ -299,7 +420,7 @@ export default function BillingScreen() {
           <option value="card">Card</option>
           <option value="credit">Credit</option>
         </select>
-        <label className="text-sm text-slate-600">Amount:</label>
+        <label className="text-sm text-slate-600">Advance amount:</label>
         <input
           ref={amountPaidRef}
           type="number"
@@ -307,7 +428,7 @@ export default function BillingScreen() {
           step={0.01}
           value={amountPaid}
           onChange={(e) => setAmountPaid(e.target.value)}
-          placeholder="Amount received"
+          placeholder="Amount paid now"
           className="w-28 border border-slate-300 px-2 py-1.5 text-sm"
         />
         <button
@@ -331,8 +452,8 @@ export default function BillingScreen() {
 
       {/* Status bar */}
       <div className="flex items-center justify-between px-4 py-1.5 bg-slate-100 text-xs text-slate-600 border-t border-slate-200">
-        <span>Bill # {billNumber || '—'}  |  Items: {items.length}  |  Total: ₹{finalAmount.toFixed(2)}</span>
-        <span>F2 New  F3 Scan  F10 Payment  F12 Save & Print  Del Remove line</span>
+        <span>Bill # {billNumber || '—'}  |  Items: {items.length}  |  Net: ₹{finalAmount.toFixed(2)}</span>
+        <span>F2 New  F3 Scan  F10 Advance  F12 Save & Print  Del Remove line</span>
       </div>
     </div>
   );

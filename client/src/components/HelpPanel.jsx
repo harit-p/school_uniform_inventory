@@ -16,8 +16,8 @@ const SHORTCUTS = [
 ];
 
 export default function HelpPanel({ open, onClose }) {
-  useHotkeys('escape', onClose, { enableOnFormTags: false }, [onClose]);
-  useHotkeys('f1', () => onClose(), { enableOnFormTags: false }, [onClose]);
+  useHotkeys('escape', (e) => { e?.preventDefault(); onClose(); }, { enableOnFormTags: true }, [onClose]);
+  useHotkeys('f1', (e) => { e?.preventDefault(); onClose(); }, { enableOnFormTags: true }, [onClose]);
 
   if (!open) return null;
 
@@ -51,6 +51,9 @@ export default function HelpPanel({ open, onClose }) {
             </li>
           ))}
         </ul>
+        <p className="mt-3 pt-3 border-t border-slate-200 text-xs text-slate-500">
+          Mac: If F-keys don’t work, hold <kbd className="rounded bg-slate-100 px-1">Fn</kbd> when pressing them, or enable “Use F1, F2, etc. as standard function keys” in System Settings → Keyboard.
+        </p>
       </div>
     </div>
   );

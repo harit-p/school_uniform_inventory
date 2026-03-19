@@ -77,30 +77,18 @@ function App() {
 }
 
 function Home() {
-  const [health, setHealth] = useState(null);
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    api.get('/health')
-      .then(setHealth)
-      .catch((e) => setError(e.message));
-  }, []);
-
-  useEffect(() => {
     api.get('/stock/summary')
       .then(setSummary)
-      .catch(() => {});
+      .catch((e) => setError(e.message));
   }, []);
 
   return (
     <div className="space-y-6">
       <h2 className="text-lg font-semibold text-slate-800">Dashboard</h2>
-      {health && (
-        <p className="text-sm text-green-700">
-          API: server={health.server}, database={health.database}
-        </p>
-      )}
       {error && (
         <p className="text-sm text-red-600">API error: {error}</p>
       )}

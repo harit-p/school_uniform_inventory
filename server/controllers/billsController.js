@@ -84,10 +84,6 @@ export async function createBill(req, res) {
       const gstRate = product.gstRate ?? 5;
       const { taxableAmount, cgst, sgst, totalAmount } = calcLineItem(qty, unitPrice, gstRate, lineDiscount);
 
-      if ((product.currentStock ?? 0) < qty) {
-        return res.status(400).json({ error: `Insufficient stock for ${product.name}. Available: ${product.currentStock ?? 0}` });
-      }
-
       lineItems.push({
         product: product._id,
         sku: product.sku,
@@ -122,9 +118,12 @@ export async function createBill(req, res) {
       customer: {
         name: customer.name || 'CASH CUSTOMER',
         phone: customer.phone || '',
+        gst: customer.gst || '',
         school: customer.school || null,
         class: customer.class || '',
       },
+      stateName: req.body.stateName ?? 'Gujarat',
+      stateCode: req.body.stateCode ?? '24',
       items: lineItems,
       subtotal,
       totalCgst,
@@ -230,13 +229,14 @@ async function generatePdf(bill) {
 
     doc.fontSize(16).font('Helvetica-Bold').text('Shri Hari Vastra Bhandar', { align: 'center' });
     doc.fontSize(9).font('Helvetica').text('Ashadeep S to 8 / A/B/40, 1PANT(12)HLLP5/1LC071', { align: 'center' });
-    doc.text('GST No: 24BHLPS3092M1Z0  |  State: Gujarat (24)', { align: 'center' });
+    doc.text(`GST No: 24BHLPS3092M1Z0  |  State: ${bill.stateName || 'Gujarat'} (${bill.stateCode || '24'})`, { align: 'center' });
     doc.moveDown(2);
     doc.fontSize(14).font('Helvetica-Bold').text('TAX INVOICE', { align: 'center' });
     doc.moveDown(1);
     doc.fontSize(10).font('Helvetica');
     doc.text(`Bill No: ${bill.billNumber}    Date: ${new Date(bill.billDate).toLocaleDateString('en-IN')}`);
     doc.text(`Customer: ${bill.customer?.name || 'CASH CUSTOMER'}`);
+    if (bill.customer?.gst) doc.text(`Customer GST: ${bill.customer.gst}`);
     doc.moveDown(1);
 
     const tableTop = doc.y;

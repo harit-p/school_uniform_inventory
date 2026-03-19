@@ -11,8 +11,10 @@ export async function listProducts(req, res) {
     if (size) filter.size = size;
     if (stockType) filter.stockType = stockType;
     const products = await Product.find(filter)
+      .select('sku name school itemType size currentStock lowStockAlert sellingPrice costPrice isActive')
       .populate('school', 'name code')
       .sort({ sku: 1 })
+      .limit(500)
       .lean();
     res.json(products);
   } catch (err) {
@@ -77,19 +79,31 @@ export async function deleteProduct(req, res) {
   }
 }
 
+function escapeRegex(s) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export async function searchProducts(req, res) {
   try {
     const q = (req.query.q || '').trim();
     if (!q) return res.json([]);
+    const skuUpper = q.toUpperCase();
+    // Exact SKU match is a single indexed lookup — return immediately
+    const exact = await Product.findOne({ isActive: true, sku: skuUpper })
+      .select('sku name sellingPrice costPrice currentStock lowStockAlert school')
+      .populate('school', 'name code')
+      .lean();
+    if (exact) return res.json([exact]);
+
+    const escaped = escapeRegex(q);
+    const re = new RegExp(escaped, 'i');
     const products = await Product.find({
       isActive: true,
-      $or: [
-        { sku: new RegExp(q, 'i') },
-        { name: new RegExp(q, 'i') },
-      ],
+      $or: [{ sku: re }, { name: re }],
     })
+      .select('sku name sellingPrice costPrice currentStock lowStockAlert school')
       .populate('school', 'name code')
-      .limit(20)
+      .limit(15)
       .lean();
     res.json(products);
   } catch (err) {

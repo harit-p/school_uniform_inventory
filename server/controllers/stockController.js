@@ -88,18 +88,33 @@ export async function recordAdjustment(req, res) {
 
 export async function stockSummary(req, res) {
   try {
-    const products = await Product.find({ isActive: true }).lean();
-    const totalItems = products.length;
-    const totalStock = products.reduce((s, p) => s + (p.currentStock || 0), 0);
-    const lowCount = products.filter(
-      (p) => (p.currentStock ?? 0) < (p.lowStockAlert ?? 5)
-    ).length;
-    const outCount = products.filter((p) => (p.currentStock ?? 0) <= 0).length;
+    const [summary] = await Product.aggregate([
+      { $match: { isActive: true } },
+      {
+        $group: {
+          _id: null,
+          totalProducts: { $sum: 1 },
+          totalStock: { $sum: { $ifNull: ['$currentStock', 0] } },
+          lowCount: {
+            $sum: {
+              $cond: [
+                { $lt: [{ $ifNull: ['$currentStock', 0] }, { $ifNull: ['$lowStockAlert', 5] }] },
+                1,
+                0,
+              ],
+            },
+          },
+          outCount: {
+            $sum: { $cond: [{ $lte: [{ $ifNull: ['$currentStock', 0] }, 0] }, 1, 0] },
+          },
+        },
+      },
+    ]);
     res.json({
-      totalProducts: totalItems,
-      totalStock,
-      lowStockCount: lowCount,
-      outOfStockCount: outCount,
+      totalProducts: summary?.totalProducts ?? 0,
+      totalStock: summary?.totalStock ?? 0,
+      lowStockCount: summary?.lowCount ?? 0,
+      outOfStockCount: summary?.outCount ?? 0,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -108,13 +123,36 @@ export async function stockSummary(req, res) {
 
 export async function lowStock(req, res) {
   try {
-    const products = await Product.find({ isActive: true })
-      .populate('school', 'name code')
-      .lean();
-    const low = products.filter(
-      (p) => (p.currentStock ?? 0) < (p.lowStockAlert ?? 5)
-    );
-    low.sort((a, b) => (a.currentStock ?? 0) - (b.currentStock ?? 0));
+    const low = await Product.aggregate([
+      { $match: { isActive: true } },
+      {
+        $addFields: {
+          threshold: { $ifNull: ['$lowStockAlert', 5] },
+          stock: { $ifNull: ['$currentStock', 0] },
+        },
+      },
+      { $match: { $expr: { $lt: ['$stock', '$threshold'] } } },
+      { $sort: { stock: 1 } },
+      { $limit: 100 },
+      {
+        $lookup: {
+          from: 'schools',
+          localField: 'school',
+          foreignField: '_id',
+          as: 'schoolDoc',
+          pipeline: [{ $project: { name: 1, code: 1 } }],
+        },
+      },
+      {
+        $set: {
+          school: { $arrayElemAt: ['$schoolDoc', 0] },
+          currentStock: '$stock',
+          lowStockAlert: '$threshold',
+        },
+      },
+      { $unset: ['schoolDoc', 'threshold', 'stock'] },
+      { $project: { __v: 0 } },
+    ]);
     res.json(low);
   } catch (err) {
     res.status(500).json({ error: err.message });

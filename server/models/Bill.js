@@ -21,9 +21,12 @@ const billSchema = new mongoose.Schema({
   customer: {
     name: { type: String, default: 'CASH CUSTOMER' },
     phone: { type: String, default: '' },
+    gst: { type: String, default: '' },
     school: { type: mongoose.Schema.Types.ObjectId, ref: 'School', default: null },
     class: { type: String, default: '' },
   },
+  stateName: { type: String, default: 'Gujarat' },
+  stateCode: { type: String, default: '24' },
   items: [billItemSchema],
   subtotal: { type: Number, required: true, default: 0 },
   totalCgst: { type: Number, default: 0 },

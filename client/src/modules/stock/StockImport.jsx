@@ -40,6 +40,7 @@ function ImportLine({ line, onRemove, onQuantityChange, onPriceChange }) {
 export default function StockImport() {
   const [search, setSearch] = useState('');
   const [searchResults, setSearchResults] = useState([]);
+  const [searchHighlightIndex, setSearchHighlightIndex] = useState(-1);
   const [lines, setLines] = useState([]);
   const [note, setNote] = useState('');
   const [confirming, setConfirming] = useState(false);
@@ -48,6 +49,7 @@ export default function StockImport() {
   const [adjustProduct, setAdjustProduct] = useState(null);
   const [adjustSearch, setAdjustSearch] = useState('');
   const [adjustResults, setAdjustResults] = useState([]);
+  const [adjustHighlightIndex, setAdjustHighlightIndex] = useState(-1);
   const [adjustQty, setAdjustQty] = useState(0);
   const [adjustNote, setAdjustNote] = useState('');
   const [adjusting, setAdjusting] = useState(false);
@@ -56,12 +58,19 @@ export default function StockImport() {
   useEffect(() => {
     if (!search.trim()) {
       setSearchResults([]);
+      setSearchHighlightIndex(-1);
       return;
     }
     const t = setTimeout(() => {
       searchProducts(search)
-        .then(setSearchResults)
-        .catch(() => setSearchResults([]));
+        .then((results) => {
+          setSearchResults(results);
+          setSearchHighlightIndex(results.length > 0 ? 0 : -1);
+        })
+        .catch(() => {
+          setSearchResults([]);
+          setSearchHighlightIndex(-1);
+        });
     }, 200);
     return () => clearTimeout(t);
   }, [search]);
@@ -79,7 +88,46 @@ export default function StockImport() {
     ]);
     setSearch('');
     setSearchResults([]);
+    setSearchHighlightIndex(-1);
     searchRef.current?.focus();
+  };
+
+  useEffect(() => {
+    if (searchResults.length === 0 || searchHighlightIndex < 0) return;
+    const id = searchResults[searchHighlightIndex]?._id;
+    if (id) {
+      const el = document.getElementById(`import-search-option-${id}`);
+      el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }, [searchHighlightIndex, searchResults]);
+
+  useEffect(() => {
+    if (adjustResults.length === 0 || adjustHighlightIndex < 0) return;
+    const id = adjustResults[adjustHighlightIndex]?._id;
+    if (id) {
+      const el = document.getElementById(`adjust-search-option-${id}`);
+      el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }, [adjustHighlightIndex, adjustResults]);
+
+  const handleSearchKeyDown = (e) => {
+    if (searchResults.length === 0) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSearchHighlightIndex((i) => (i < searchResults.length - 1 ? i + 1 : i));
+      return;
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSearchHighlightIndex((i) => (i <= 0 ? searchResults.length - 1 : i - 1));
+      return;
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      const idx = searchHighlightIndex >= 0 ? searchHighlightIndex : 0;
+      const product = searchResults[idx];
+      if (product) addProduct(product);
+    }
   };
 
   const removeLine = (index) => {
@@ -162,17 +210,20 @@ export default function StockImport() {
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Type SKU or name, then select"
+          onKeyDown={handleSearchKeyDown}
+          placeholder="Type SKU or name, use ↑↓ to select, Enter to add"
           className="mt-1 w-full max-w-md rounded border border-slate-300 px-3 py-2 text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500"
+          autoComplete="off"
         />
         {searchResults.length > 0 && (
-          <ul className="mt-2 max-h-48 overflow-auto rounded border border-slate-200 bg-slate-50">
-            {searchResults.map((p) => (
-              <li key={p._id}>
+          <ul className="mt-2 max-h-48 overflow-auto rounded border border-slate-200 bg-slate-50" role="listbox">
+            {searchResults.map((p, idx) => (
+              <li key={p._id} id={`import-search-option-${p._id}`} role="option" aria-selected={idx === searchHighlightIndex}>
                 <button
                   type="button"
                   onClick={() => addProduct(p)}
-                  className="block w-full px-3 py-2 text-left text-sm hover:bg-slate-200"
+                  onMouseEnter={() => setSearchHighlightIndex(idx)}
+                  className={`block w-full px-3 py-2 text-left text-sm ${idx === searchHighlightIndex ? 'bg-slate-300' : 'hover:bg-slate-200'}`}
                 >
                   <span className="font-mono">{p.sku}</span> — {p.name} (₹{p.costPrice ?? 0})
                 </button>
@@ -254,21 +305,52 @@ export default function StockImport() {
               <div className="relative">
                 <input
                   type="text"
-                  placeholder="Search SKU/name"
+                  placeholder="Search SKU/name (↑↓ to select)"
                   value={adjustSearch}
                   onChange={(e) => {
                     const v = e.target.value;
                     setAdjustSearch(v);
-                    if (!v.trim()) { setAdjustResults([]); return; }
-                    searchProducts(v).then(setAdjustResults).catch(() => setAdjustResults([]));
+                    if (!v.trim()) { setAdjustResults([]); setAdjustHighlightIndex(-1); return; }
+                    searchProducts(v).then((results) => {
+                      setAdjustResults(results);
+                      setAdjustHighlightIndex(results.length > 0 ? 0 : -1);
+                    }).catch(() => { setAdjustResults([]); setAdjustHighlightIndex(-1); });
+                  }}
+                  onKeyDown={(e) => {
+                    if (adjustResults.length === 0) return;
+                    if (e.key === 'ArrowDown') {
+                      e.preventDefault();
+                      setAdjustHighlightIndex((i) => (i < adjustResults.length - 1 ? i + 1 : i));
+                    } else if (e.key === 'ArrowUp') {
+                      e.preventDefault();
+                      setAdjustHighlightIndex((i) => (i <= 0 ? adjustResults.length - 1 : i - 1));
+                    } else if (e.key === 'Enter') {
+                      e.preventDefault();
+                      const idx = adjustHighlightIndex >= 0 ? adjustHighlightIndex : 0;
+                      const p = adjustResults[idx];
+                      if (p) {
+                        setAdjustProduct(p);
+                        setAdjustSearch('');
+                        setAdjustResults([]);
+                        setAdjustHighlightIndex(-1);
+                      }
+                    }
                   }}
                   className="mt-0.5 w-48 rounded border border-slate-300 px-2 py-1.5 text-sm"
+                  autoComplete="off"
                 />
                 {adjustResults.length > 0 && (
-                  <ul className="absolute z-10 mt-0.5 max-h-36 w-64 overflow-auto rounded border border-slate-200 bg-white shadow">
-                    {adjustResults.map((p) => (
-                      <li key={p._id}>
-                        <button type="button" onClick={() => { setAdjustProduct(p); setAdjustSearch(''); setAdjustResults([]); }} className="block w-full px-2 py-1.5 text-left text-sm hover:bg-slate-100">{p.sku} — {p.name}</button>
+                  <ul className="absolute z-10 mt-0.5 max-h-36 w-64 overflow-auto rounded border border-slate-200 bg-white shadow" role="listbox">
+                    {adjustResults.map((p, idx) => (
+                      <li key={p._id} id={`adjust-search-option-${p._id}`} role="option" aria-selected={idx === adjustHighlightIndex}>
+                        <button
+                          type="button"
+                          onClick={() => { setAdjustProduct(p); setAdjustSearch(''); setAdjustResults([]); setAdjustHighlightIndex(-1); }}
+                          onMouseEnter={() => setAdjustHighlightIndex(idx)}
+                          className={`block w-full px-2 py-1.5 text-left text-sm ${idx === adjustHighlightIndex ? 'bg-slate-200' : 'hover:bg-slate-100'}`}
+                        >
+                          {p.sku} — {p.name}
+                        </button>
                       </li>
                     ))}
                   </ul>
