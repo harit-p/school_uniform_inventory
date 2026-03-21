@@ -4,7 +4,8 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch index.js",
-    "start": "node index.js"
+    "start": "node index.js",
+    "backup": "node scripts/dailyBackup.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",

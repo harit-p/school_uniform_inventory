@@ -18,7 +18,7 @@ function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
-      <GlobalShortcuts helpOpen={helpOpen} setHelpOpen={setHelpOpen} />
+      <GlobalShortcuts setHelpOpen={setHelpOpen} />
       <header className="border-b border-slate-200 bg-white px-6 py-3 flex-shrink-0">
         <div className="flex items-center justify-between">
           <Link to="/" className="text-xl font-semibold text-slate-800">

@@ -1,5 +1,6 @@
 import Product from '../models/Product.js';
 import StockTransaction from '../models/StockTransaction.js';
+import { withOptionalTransaction } from '../utils/withOptionalTransaction.js';
 
 export async function listTransactions(req, res) {
   try {
@@ -29,28 +30,49 @@ export async function recordImport(req, res) {
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'items array is required' });
     }
-    const results = [];
+
+    const lines = [];
     for (const line of items) {
       const { productId, quantity, unitPrice } = line;
       if (!productId || quantity == null || quantity <= 0) continue;
-      const product = await Product.findById(productId);
+      const product = await Product.findById(productId).lean();
       if (!product) continue;
       const q = Number(quantity);
       const price = Number(unitPrice) ?? product.costPrice ?? 0;
-      await Product.findByIdAndUpdate(productId, { $inc: { currentStock: q } });
-      if (price && (product.costPrice === 0 || product.costPrice == null)) {
-        await Product.findByIdAndUpdate(productId, { costPrice: price });
-      }
-      const txn = await StockTransaction.create({
-        type: 'import',
-        product: productId,
-        quantity: q,
-        unitPrice: price,
-        note: note || '',
-        createdBy: createdBy || 'system',
-      });
-      results.push(txn);
+      lines.push({ productId, product, q, price });
     }
+
+    if (lines.length === 0) {
+      return res.status(400).json({ error: 'No valid items to import' });
+    }
+
+    let results = [];
+    await withOptionalTransaction(async (session) => {
+      const opts = session ? { session } : {};
+      const batch = [];
+      for (const { productId, product, q, price } of lines) {
+        await Product.findByIdAndUpdate(productId, { $inc: { currentStock: q } }, opts);
+        if (price && (product.costPrice === 0 || product.costPrice == null)) {
+          await Product.findByIdAndUpdate(productId, { costPrice: price }, opts);
+        }
+        const [txn] = await StockTransaction.create(
+          [
+            {
+              type: 'import',
+              product: productId,
+              quantity: q,
+              unitPrice: price,
+              note: note || '',
+              createdBy: createdBy || 'system',
+            },
+          ],
+          opts
+        );
+        batch.push(txn);
+      }
+      results = batch;
+    });
+
     res.status(201).json({ count: results.length, transactions: results });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -63,25 +85,54 @@ export async function recordAdjustment(req, res) {
     if (!productId || quantity == null) {
       return res.status(400).json({ error: 'productId and quantity are required' });
     }
-    const product = await Product.findById(productId);
-    if (!product) return res.status(404).json({ error: 'Product not found' });
     const q = Number(quantity);
-    const current = product.currentStock ?? 0;
-    const newStock = current + q;
-    if (newStock < 0) {
-      return res.status(400).json({ error: 'Resulting stock cannot be negative' });
+    const filter = { _id: productId };
+    if (q < 0) {
+      filter.$expr = {
+        $gte: [{ $add: [{ $ifNull: ['$currentStock', 0] }, q] }, 0],
+      };
     }
-    await Product.findByIdAndUpdate(productId, { currentStock: newStock });
-    const txn = await StockTransaction.create({
-      type: 'adjustment',
-      product: productId,
-      quantity: q,
-      unitPrice: product.costPrice ?? 0,
-      note: note || 'Manual adjustment',
-      createdBy: createdBy || 'system',
+
+    let txn;
+    await withOptionalTransaction(async (session) => {
+      const opts = session ? { session } : {};
+      const updated = await Product.findOneAndUpdate(filter, { $inc: { currentStock: q } }, {
+        ...opts,
+        new: true,
+      });
+      if (!updated) {
+        const product = await Product.findById(productId).lean();
+        if (!product) {
+          const err = new Error('NOT_FOUND');
+          err.code = 'NOT_FOUND';
+          throw err;
+        }
+        const err = new Error('NEGATIVE_STOCK');
+        err.code = 'NEGATIVE_STOCK';
+        throw err;
+      }
+      const [created] = await StockTransaction.create(
+        [
+          {
+            type: 'adjustment',
+            product: productId,
+            quantity: q,
+            unitPrice: updated.costPrice ?? 0,
+            note: note || 'Manual adjustment',
+            createdBy: createdBy || 'system',
+          },
+        ],
+        opts
+      );
+      txn = created;
     });
+
     res.status(201).json(txn);
   } catch (err) {
+    if (err.code === 'NOT_FOUND') return res.status(404).json({ error: 'Product not found' });
+    if (err.code === 'NEGATIVE_STOCK') {
+      return res.status(400).json({ error: 'Resulting stock cannot be negative' });
+    }
     res.status(400).json({ error: err.message });
   }
 }

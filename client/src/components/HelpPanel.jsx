@@ -8,7 +8,8 @@ const SHORTCUTS = [
   { key: 'F5', action: 'Products' },
   { key: 'F6', action: 'Schools' },
   { key: 'F8', action: 'Bill History' },
-  { key: 'F10', action: 'Payment section (on Billing)' },
+  { key: 'F9', action: 'Focus discount field (on Billing)' },
+  { key: 'F10', action: 'Focus advance amount (on Billing)' },
   { key: 'F12', action: 'Save & Print Bill' },
   { key: 'Ctrl+S', action: 'Save bill as draft' },
   { key: 'Ctrl+P', action: 'Print current bill' },
@@ -17,7 +18,7 @@ const SHORTCUTS = [
 
 export default function HelpPanel({ open, onClose }) {
   useHotkeys('escape', (e) => { e?.preventDefault(); onClose(); }, { enableOnFormTags: true }, [onClose]);
-  useHotkeys('f1', (e) => { e?.preventDefault(); onClose(); }, { enableOnFormTags: true }, [onClose]);
+  // F1 is handled in GlobalShortcuts (capture phase) so it works when the browser would open Help
 
   if (!open) return null;
 

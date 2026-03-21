@@ -15,6 +15,7 @@ function calcLine(qty, unitPrice, gstRate) {
 
 export default function BillingScreen() {
   const scanRef = useRef(null);
+  const discountRef = useRef(null);
   const amountPaidRef = useRef(null);
   const lastRowQtyRef = useRef(null);
   const [billNumber, setBillNumber] = useState('');
@@ -225,6 +226,7 @@ export default function BillingScreen() {
   const hotkeyOpts = { enableOnFormTags: true };
   useHotkeys('f2', (e) => { e?.preventDefault(); setItems([]); setDiscount(0); setAmountPaid(''); setCustomerGst(''); setStateName('Gujarat'); setStateCode('24'); setError(null); getNextBillNumber().then((r) => setBillNumber(r.billNumber || '')).catch(() => {}); scanRef.current?.focus(); }, hotkeyOpts);
   useHotkeys('f3', (e) => { e?.preventDefault(); scanRef.current?.focus(); }, hotkeyOpts);
+  useHotkeys('f9', (e) => { e?.preventDefault(); discountRef.current?.focus(); }, hotkeyOpts);
   useHotkeys('f10', (e) => { e?.preventDefault(); amountPaidRef.current?.focus(); }, hotkeyOpts);
   useHotkeys('f12', (e) => { e?.preventDefault(); handleSave(true); }, hotkeyOpts);
   useHotkeys('delete', (e) => { if (selectedIndex >= 0 && selectedIndex < items.length) { e?.preventDefault(); removeItem(selectedIndex); } }, hotkeyOpts);
@@ -388,8 +390,9 @@ export default function BillingScreen() {
           <span className="ml-4 text-slate-500">SGST:</span> <span>₹{totalSgst.toFixed(2)}</span>
         </div>
         <div>
-          <span className="text-slate-500">Discount:</span>
+          <span className="text-slate-500">Discount [F9]:</span>
           <input
+            ref={discountRef}
             type="number"
             min={0}
             value={discount}
@@ -420,7 +423,7 @@ export default function BillingScreen() {
           <option value="card">Card</option>
           <option value="credit">Credit</option>
         </select>
-        <label className="text-sm text-slate-600">Advance amount:</label>
+        <label className="text-sm text-slate-600">Advance amount [F10]:</label>
         <input
           ref={amountPaidRef}
           type="number"
@@ -453,7 +456,7 @@ export default function BillingScreen() {
       {/* Status bar */}
       <div className="flex items-center justify-between px-4 py-1.5 bg-slate-100 text-xs text-slate-600 border-t border-slate-200">
         <span>Bill # {billNumber || '—'}  |  Items: {items.length}  |  Net: ₹{finalAmount.toFixed(2)}</span>
-        <span>F2 New  F3 Scan  F10 Advance  F12 Save & Print  Del Remove line</span>
+        <span>F2 New  F3 Scan  F9 Discount  F10 Advance  F12 Save & Print  Del Remove line</span>
       </div>
     </div>
   );

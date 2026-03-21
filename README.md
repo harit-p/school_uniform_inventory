@@ -55,3 +55,11 @@ Create **`server/.env`** (or set env vars before starting the server):
 - `PORT` — server port; defaults to 3001
 
 For MongoDB Atlas, put the URL in `server/.env`. If your password contains `@`, encode it as `%40`.
+
+## Database backup
+
+Run **`npm run backup`** from the project root for an on-demand backup (uses `MONGODB_URI` from `server/.env`). For daily scheduling, retention, restore, and Atlas notes, see **[docs/BACKUP.md](docs/BACKUP.md)**.
+
+## Multi-branch / concurrent use
+
+Many branches can share one database. See **[docs/CONCURRENCY.md](docs/CONCURRENCY.md)** for atomic stock updates, bill numbering, and optional **multi-document transactions** (use **MongoDB Atlas** or any **replica set** for full all-or-nothing bill + stock saves).
